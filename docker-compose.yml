@@ -1,7 +1,6 @@
 services:
   lighter-bot:
-    build: .
-    # image: ${BOT_IMAGE:-ghcr.io/your-org/lighter-bot:latest}
+    image: ${BOT_IMAGE:-ghcr.io/directiv13/lighter-bot:latest}
     container_name: lighter-bot
     restart: unless-stopped
     env_file:
