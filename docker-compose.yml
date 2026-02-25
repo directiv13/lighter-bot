@@ -1,0 +1,16 @@
+services:
+  lighter-bot:
+    build: .
+    # image: ${BOT_IMAGE:-ghcr.io/your-org/lighter-bot:latest}
+    container_name: lighter-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      STATE_FILE: /data/state.json
+      DB_FILE: /data/subscriptions.db
+    volumes:
+      - lighter_bot_data:/data
+
+volumes:
+  lighter_bot_data:
