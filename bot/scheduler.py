@@ -13,6 +13,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bot.config import settings
 from bot.redis_client import get_recent_trades
 
+LIGHTALYTICS_BASE = "https://lightalytics.com/accounts"
+
 logger = logging.getLogger(__name__)
 
 _scheduler = AsyncIOScheduler()
@@ -45,6 +47,48 @@ def start_scheduler() -> None:
 def stop_scheduler() -> None:
     if _scheduler.running:
         _scheduler.shutdown(wait=False)
+
+
+async def send_sell_telegram(trade: dict) -> None:
+    """Send an instant sell-alert message to the Telegram channel."""
+    if _bot_ref is None:
+        logger.warning("Bot reference not set – skipping Telegram sell alert")
+        return
+
+    account_id = settings.lighter_account_id
+    market = trade.get("_market") or trade.get("market_id", "?")
+    price = trade.get("price", "?")
+    size = trade.get("size", "?")
+    usd = float(trade.get("_usd") or trade.get("usd_amount") or 0)
+
+    account_url = f"{LIGHTALYTICS_BASE}/{account_id}"
+    account_link = f'<a href="{account_url}">Account {account_id}</a>'
+
+    binance_url = settings.binance_pair_url
+    if binance_url:
+        market_line = f'Market: <a href="{binance_url}">{market}</a>'
+    else:
+        market_line = f"Market: {market}"
+
+    message = (
+        f"🐋 <b>Lighter Whale SELL</b>\n\n"
+        f"{market_line}\n"
+        f"Price: {price}\n"
+        f"Size: {size}\n"
+        f"USD: ${usd:,.2f}\n\n"
+        f"{account_link}"
+    )
+
+    try:
+        await _bot_ref.send_message(
+            chat_id=settings.telegram_channel_id,
+            text=message,
+            parse_mode="HTML",
+            disable_web_page_preview=True,
+        )
+        logger.info("Telegram sell alert posted for market %s", market)
+    except Exception as exc:
+        logger.error("Failed to post Telegram sell alert: %s", exc)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

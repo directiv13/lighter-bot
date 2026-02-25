@@ -24,7 +24,7 @@ from bot.database import init_db
 from bot.lighter_ws import LighterWebSocketClient
 from bot.pushover import notify_sell
 from bot.redis_client import close_redis
-from bot.scheduler import set_bot, start_scheduler, stop_scheduler
+from bot.scheduler import send_sell_telegram, set_bot, start_scheduler, stop_scheduler
 from bot.telegram_bot import build_application
 
 
@@ -61,7 +61,11 @@ async def main() -> None:
     start_scheduler()
 
     # ── Lighter WebSocket ─────────────────────────────────────────────────────
-    ws_client = LighterWebSocketClient(on_sell_callback=notify_sell)
+    async def _on_sell(trade: dict) -> None:
+        await notify_sell(trade)
+        await send_sell_telegram(trade)
+
+    ws_client = LighterWebSocketClient(on_sell_callback=_on_sell)
     _ws_task = ws_client.start()
 
     logger.info("All services started. Waiting for updates …")

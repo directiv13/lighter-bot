@@ -60,6 +60,11 @@ class Config:
         default_factory=lambda: int(os.getenv("SELL_NOTIFY_COOLDOWN_HOURS", "2"))
     )
 
+    # Notification links
+    binance_pair_url: str = field(
+        default_factory=lambda: os.getenv("BINANCE_PAIR_URL", "")
+    )
+
     # Logging
     log_level: str = field(default_factory=lambda: os.getenv("LOG_LEVEL", "INFO"))
 
