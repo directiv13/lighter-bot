@@ -19,7 +19,7 @@ services:
 
   bot:
     build: .
-    # image: ghcr.io/${GITHUB_REPOSITORY:-lighter-whale-tracker/lighter-whale-tracker}:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-lighter-whale-tracker/lighter-whale-tracker}:latest
     restart: unless-stopped
     depends_on:
       redis:
