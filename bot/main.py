@@ -62,7 +62,7 @@ async def main() -> None:
 
     # ── Lighter WebSocket ─────────────────────────────────────────────────────
     ws_client = LighterWebSocketClient(on_sell_callback=notify_sell)
-    ws_task = ws_client.start()
+    _ws_task = ws_client.start()
 
     logger.info("All services started. Waiting for updates …")
 
