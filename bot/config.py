@@ -39,6 +39,11 @@ class Config:
         default_factory=lambda: _require("TELEGRAM_CHANNEL_ID")
     )
 
+    # Pushover
+    pushover_user_key: str | None = field(
+        default_factory=lambda: os.getenv("PUSHOVER_USER_KEY") or None
+    )
+
     # Redis
     redis_host: str = field(default_factory=lambda: os.getenv("REDIS_HOST", "redis"))
     redis_port: int = field(default_factory=lambda: int(os.getenv("REDIS_PORT", "6379")))

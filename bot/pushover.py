@@ -21,7 +21,6 @@ from bot.database import get_all_users, update_last_notification
 logger = logging.getLogger(__name__)
 
 PUSHOVER_API_URL = "https://api.pushover.net/1/messages.json"
-PUSHOVER_APP_TOKEN = "lighter_whale_tracker"   # static app token; keep neutral
 
 # Cooldown in seconds
 _COOLDOWN_SECONDS: float = settings.sell_notify_cooldown_hours * 3600
@@ -70,7 +69,7 @@ async def notify_sell(trade: dict) -> None:
                 resp = await client.post(
                     PUSHOVER_API_URL,
                     data={
-                        "token": PUSHOVER_APP_TOKEN,
+                        "token": settings.pushover_user_key,  # app token
                         "user": user["pushover_key"],
                         "title": msg_title,
                         "message": msg_body,
