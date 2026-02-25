@@ -1,15 +1,41 @@
+version: "3.9"
+
 services:
-  lighter-bot:
-    image: ${BOT_IMAGE:-ghcr.io/directiv13/lighter-bot:latest}
-    container_name: lighter-bot
+  redis:
+    image: redis:7-alpine
     restart: unless-stopped
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  bot:
+    build: .
+    # image: ghcr.io/${GITHUB_REPOSITORY:-lighter-whale-tracker/lighter-whale-tracker}:latest
+    restart: unless-stopped
+    depends_on:
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     environment:
-      STATE_FILE: /data/state.json
-      DB_FILE: /data/subscriptions.db
+      REDIS_HOST: redis
     volumes:
-      - lighter_bot_data:/data
+      - bot_data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
-  lighter_bot_data:
+  redis_data:
+  bot_data:

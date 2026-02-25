@@ -1,20 +1,36 @@
-FROM python:3.11-slim
+# ── Stage 1: build deps ───────────────────────────────────────────────────────
+FROM python:3.12-slim AS builder
 
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+WORKDIR /build
+
+# Install build tools
+RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --upgrade pip \
+ && pip install --prefix=/install --no-cache-dir -r requirements.txt
+
+# ── Stage 2: runtime image ────────────────────────────────────────────────────
+FROM python:3.12-slim
+
+# Non-root user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
 
 WORKDIR /app
 
-RUN addgroup --system bot && adduser --system --ingroup bot bot
+# Copy installed packages from builder
+COPY --from=builder /install /usr/local
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy source
+COPY bot/ ./bot/
 
-COPY lighter_bot ./lighter_bot
-COPY bot.py ./
+# Persistent data volume mount point
+RUN mkdir -p /data && chown appuser:appuser /data
 
-RUN mkdir -p /data && chown -R bot:bot /app /data
+USER appuser
 
-USER bot
+# Health-check: verify SQLite DB dir is writable
+HEALTHCHECK --interval=30s --timeout=10s --retries=3 \
+    CMD python -c "import os; os.access('/data', os.W_OK) or exit(1)"
 
-CMD ["python", "-m", "lighter_bot.main"]
+CMD ["python", "-m", "bot.main"]

@@ -1,140 +1,192 @@
-# Lighter Trade Monitor Bot
+# Lighter Whale Tracker
 
-Asynchronous Telegram bot that polls Lightalytics every 5 minutes and sends:
-- Immediate alert for every `Sell` trade
-- Batch summary with cumulative Buy/Sell USD totals
-- Pushover alerts for subscribed users on `Sell` with anti-spam cooldown (1 notification per user per 2 hours by default)
+A Telegram bot that monitors a **Lighter DEX** whale account in real-time, delivers
+5-minute cumulative trade reports to a Telegram channel, and sends instant sell-alert
+push notifications via **Pushover**.
 
-## Stack
+---
 
-- Python 3.11+
-- `httpx` (async HTTP)
-- `aiogram` (Telegram API)
-- `apscheduler` (5-minute scheduling)
-- `pydantic` (payload validation)
-- `aiosqlite` (subscription storage)
+## Features
 
-## Local Run
+| Feature | Details |
+|---|---|
+| **Live trade monitoring** | WebSocket connection to `wss://mainnet.zklighter.elliot.ai/stream` |
+| **5-min Telegram reports** | Cumulative buy/sell volumes per market posted to a channel |
+| **Instant sell alerts** | Pushover notification fired on every detected sell |
+| **Spam prevention** | Per-user 2-hour cooldown between Pushover alerts |
+| **Subscriber management** | `/enable_pushover` / `/disable_pushover` Telegram commands |
+| **Persistent storage** | SQLite for user data, Redis Sorted-Sets for rolling trade cache |
+| **Auto-reconnect** | Exponential back-off if the WebSocket drops |
+| **Dockerised** | Single `docker compose up -d` to run everything |
+| **CI / CD** | GitHub Actions: lint → build image → push to GHCR → deploy to VPS |
 
-1. Create and activate virtual environment.
-2. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-3. Create `.env` from `.env.example` and set values:
-   - `TELEGRAM_BOT_TOKEN`
-   - `CHANNEL_ID`
-  - `PUSHOVER_APP_TOKEN`
-4. Run:
-   ```bash
-  python -m lighter_bot.main
-   ```
+---
 
-## Project Structure (Clean Architecture)
+## Architecture
 
-```text
-lighter_bot/
-  core/             # configuration and app settings
-  domain/           # core entities/models
-  application/      # use-case orchestration
-  infrastructure/   # HTTP clients and persistence adapters
-  interfaces/       # Telegram command handlers
-  main.py           # composition root / app bootstrap
-bot.py              # compatibility wrapper
 ```
+┌─────────────────────┐      WebSocket      ┌──────────────────┐
+│  Lighter Exchange   │ ──────────────────▶ │  lighter_ws.py   │
+│  (mainnet stream)   │                     │  (reconnecting)  │
+└─────────────────────┘                     └────────┬─────────┘
+                                                     │ store trades
+                                          ┌──────────▼──────────┐
+                                          │    Redis             │
+                                          │  Sorted Set          │
+                                          │  trades:{account}    │
+                                          └──────────┬──────────┘
+                                                     │ read every 5 min
+                                          ┌──────────▼──────────┐
+                                          │   scheduler.py       │
+                                          │   (APScheduler)      │
+                                          └──────────┬──────────┘
+                                                     │ post report
+                                          ┌──────────▼──────────┐
+                                          │  Telegram Channel    │
+                                          └─────────────────────┘
+
+  On every SELL detected:
+  lighter_ws.py ──▶ pushover.py ──▶ Pushover API ──▶ User device
+
+  Telegram commands:
+  User ──▶ telegram_bot.py ──▶ SQLite (users table)
+```
+
+---
+
+## Quick Start (local)
+
+### Prerequisites
+
+- Docker ≥ 24 and Docker Compose v2
+- A Telegram bot token (from [@BotFather](https://t.me/BotFather))
+- A Telegram channel where the bot is an **admin**
+- A Lighter account ID and auth token
+- *(optional)* Pushover account for sell alerts
+
+### 1 – Clone and configure
+
+```bash
+git clone https://github.com/<your-org>/lighter-whale-tracker.git
+cd lighter-whale-tracker
+
+cp .env.example .env
+# Edit .env with your real values
+```
+
+### 2 – Run
+
+```bash
+docker compose up -d
+docker compose logs -f bot   # tail logs
+```
+
+---
+
+## Environment Variables
+
+| Variable | Required | Default | Description |
+|---|---|---|---|
+| `LIGHTER_ACCOUNT_ID` | ✅ | – | Lighter account ID to monitor |
+| `LIGHTER_AUTH_TOKEN` | ✅ | – | Lighter WebSocket auth token |
+| `LIGHTER_WS_URL` | – | `wss://mainnet.zklighter.elliot.ai/stream` | WebSocket endpoint |
+| `TELEGRAM_BOT_TOKEN` | ✅ | – | Token from BotFather |
+| `TELEGRAM_CHANNEL_ID` | ✅ | – | Channel chat ID (e.g. `-1001234567890`) |
+| `REDIS_HOST` | – | `redis` | Redis hostname |
+| `REDIS_PORT` | – | `6379` | Redis port |
+| `REDIS_DB` | – | `0` | Redis database index |
+| `REDIS_PASSWORD` | – | ─ | Redis password (blank = no auth) |
+| `DATABASE_PATH` | – | `/data/whale_tracker.db` | SQLite file path |
+| `REPORT_INTERVAL_MINUTES` | – | `5` | Telegram report cadence |
+| `SELL_NOTIFY_COOLDOWN_HOURS` | – | `2` | Min hours between Pushover alerts per user |
+| `LOG_LEVEL` | – | `INFO` | Python log level |
+
+---
 
 ## Telegram Commands
 
-Users can self-subscribe for Pushover sell notifications:
+| Command | Description |
+|---|---|
+| `/start` | Welcome message |
+| `/help` | Show available commands |
+| `/enable_pushover <key>` | Subscribe to Pushover sell alerts |
+| `/disable_pushover` | Unsubscribe from Pushover alerts |
+| `/status` | Bot health and subscriber count |
 
-- `/enable_pushover <user-key>`
-  - Stores `user_id` + `pushover_user_key` in SQLite
-- `/disable_pushover`
-  - Deletes subscription from SQLite
+### Getting your Pushover user key
 
-Database table stores:
-- `user_id`
-- `pushover_user_key`
-- `last_notification_at`
+1. Sign up at [pushover.net](https://pushover.net).
+2. Install the Pushover app on your device.
+3. Your **User Key** is shown on the dashboard.
+4. Send `/enable_pushover <your-user-key>` to the bot.
 
-Cooldown behavior:
-- On each sell, subscribed users receive a Pushover alert only if their last Pushover notification was more than `NOTIFICATION_COOLDOWN_MINUTES` ago (default `120`).
+---
 
-## Docker Run
+## Project Structure
 
-Build local image:
-```bash
-docker build -t lighter-bot:local .
+```
+lighter-whale-tracker/
+├── bot/
+│   ├── __init__.py
+│   ├── config.py          # Env-var configuration (singleton)
+│   ├── database.py        # SQLite helpers (aiosqlite)
+│   ├── lighter_ws.py      # Lighter WebSocket client
+│   ├── main.py            # Application entry-point
+│   ├── pushover.py        # Pushover notification service
+│   ├── redis_client.py    # Redis Sorted-Set helpers
+│   ├── scheduler.py       # APScheduler – 5-min report job
+│   └── telegram_bot.py    # Telegram command handlers
+├── docs/
+│   └── VPS_SETUP.md       # Step-by-step VPS deployment guide
+├── .env.example
+├── .gitignore
+├── .github/
+│   └── workflows/
+│       └── deploy.yml     # CI/CD pipeline
+├── docker-compose.yml
+├── Dockerfile
+├── README.md
+└── requirements.txt
 ```
 
-Run container:
+---
+
+## Development
+
 ```bash
-docker run --name lighter-bot --restart unless-stopped --env-file .env -e STATE_FILE=/data/state.json -v lighter_bot_data:/data lighter-bot:local
+# Create a virtual environment
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # Linux / macOS
+
+pip install -r requirements.txt
+
+cp .env.example .env            # fill in values
+python -m bot.main
 ```
 
-Container entrypoint runs:
-```bash
-python -m lighter_bot.main
-```
+---
 
-## Docker Compose (VPS)
+## CI / CD
 
-`docker-compose.yml` expects:
-- `.env` file in the same directory
-- Image configured via `BOT_IMAGE` (default: `ghcr.io/your-org/lighter-bot:latest`)
-- Volume-backed files under `/data`:
-  - `STATE_FILE=/data/state.json`
-  - `DB_FILE=/data/subscriptions.db`
+The GitHub Actions workflow (`.github/workflows/deploy.yml`) runs on every push to `main`:
 
-Start:
-```bash
-docker compose up -d
-```
+1. **Lint** – `ruff check bot/`
+2. **Build & Push** – multi-stage Docker image pushed to GHCR
+3. **Deploy** – SSH into the VPS, pull the new image, restart with `docker compose`
 
-## GitHub Actions Pipelines
+### Required GitHub Secrets
 
-- **CI**: `.github/workflows/ci.yml`
-  - Runs on push/PR
-  - Installs dependencies and checks Python syntax
+| Secret | Description |
+|---|---|
+| `VPS_HOST` | VPS IP address or hostname |
+| `VPS_USER` | SSH username (e.g. `deploy`) |
+| `VPS_SSH_KEY` | Private SSH key (ED25519 or RSA) |
+| `VPS_PORT` | SSH port (default `22`) |
+| `DEPLOY_PATH` | Absolute path on VPS (e.g. `/opt/lighter-whale-tracker`) |
 
-- **Docker Publish**: `.github/workflows/docker-publish.yml`
-  - Runs on push to `main` and version tags
-  - Builds and pushes image to GHCR:
-    - `ghcr.io/<owner>/lighter-bot:latest`
-    - `ghcr.io/<owner>/lighter-bot:<tag>`
-    - `ghcr.io/<owner>/lighter-bot:sha-...`
+---
 
-- **Deploy to VPS**: `.github/workflows/deploy-vps.yml`
-  - Manual trigger (`workflow_dispatch`)
-  - SSH to VPS, pull latest image, restart compose service
+## License
 
-## Required GitHub Secrets
-
-For deployment workflow, add repository secrets:
-- `VPS_HOST`
-- `VPS_USER`
-- `VPS_PORT`
-- `VPS_SSH_KEY`
-- `GHCR_USERNAME`
-- `GHCR_TOKEN` (PAT with `read:packages`)
-
-## VPS Setup Guide
-
-Detailed instructions are in [docs/VPS_SETUP.md](docs/VPS_SETUP.md).
-
-## Operations
-
-Check logs:
-```bash
-docker compose logs -f lighter-bot
-```
-
-Restart bot:
-```bash
-docker compose restart lighter-bot
-```
-
-Update to latest image:
-```bash
-docker compose pull && docker compose up -d
-```
+MIT
