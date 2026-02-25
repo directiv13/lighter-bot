@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   redis:
     image: redis:7-alpine
@@ -19,7 +17,7 @@ services:
 
   bot:
     build: .
-    image: ghcr.io/${GITHUB_REPOSITORY:-lighter-whale-tracker/lighter-whale-tracker}:latest
+    image: ghcr.io/${GITHUB_REPOSITORY:-directiv13/lighter-bot}:latest
     restart: unless-stopped
     depends_on:
       redis:
