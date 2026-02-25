@@ -91,6 +91,18 @@ jobs:
     environment: production
 
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy docker-compose.yml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          source: docker-compose.yml
+          target: ${{ secrets.DEPLOY_PATH || '/opt/lighter-whale-tracker' }}
+
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
